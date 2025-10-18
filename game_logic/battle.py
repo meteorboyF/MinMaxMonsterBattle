@@ -11,7 +11,9 @@ TYPE_CHART = {
     'Grass': {'NotVeryEffective': ['Fire', 'Grass', 'Poison', 'Flying', 'Bug', 'Dragon', 'Steel'], 'SuperEffective': ['Water', 'Ground', 'Rock']},
     'Electric': {'NotVeryEffective': ['Grass', 'Electric', 'Dragon'], 'NoEffect': ['Ground'], 'SuperEffective': ['Water', 'Flying']},
     'Flying': {'NotVeryEffective': ['Electric', 'Rock', 'Steel'], 'SuperEffective': ['Grass', 'Fighting', 'Bug']},
-  
+    'Poison': {'NotVeryEffective': ['Poison', 'Ground', 'Rock', 'Ghost'], 'SuperEffective': ['Grass', 'Fairy'], 'NoEffect': ['Steel']},
+    'Ground': {'NotVeryEffective': ['Grass', 'Bug'], 'NoEffect': ['Flying'], 'SuperEffective': ['Fire', 'Electric', 'Poison', 'Rock', 'Steel']},
+    'Rock': {'NotVeryEffective': ['Fighting', 'Ground', 'Steel'], 'SuperEffective': ['Fire', 'Ice', 'Flying', 'Bug']},
 }
 
 class Battle:
@@ -55,20 +57,13 @@ class Battle:
 
     def handle_attack(self, attacker: Monster, defender: Monster, move: Move) -> str:
         """Handles a single attack and returns a descriptive message."""
+        # Note: Damage calculation and message generation is now split between calculate_damage
+        # and the damage application blocks in main_pygame.py for better game flow control.
         if random.randint(1, 100) > move.accuracy:
             return f"{attacker.name}'s {move.name} missed!"
         
-        damage_info = self.calculate_damage(attacker, defender, move)
-        damage = damage_info['damage']
-        
-        defender.take_damage(damage)
+        # handle_attack is now simplified to just check for miss, damage applied in main_pygame.py
         
         message = f"{attacker.name} uses {move.name}!"
-        if damage_info['effectiveness_msg']:
-            message += f"\n{damage_info['effectiveness_msg']}"
-        message += f"\nIt dealt {damage} damage."
-        
-        if defender.is_fainted:
-            message += f"\n{defender.name} fainted!"
-            
+        # The rest of the message logic is in main_pygame.py
         return message

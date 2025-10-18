@@ -5,11 +5,12 @@ import sys
 import os
 import time
 import copy
+import random 
 from game_logic.monster import Monster, Move
 from game_logic.battle import Battle
-from ai.minimax import find_best_move
+from ai.minimax import find_best_action
 
- 
+# --- Setup, Constants, Asset Loading ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SCREEN_WIDTH, SCREEN_HEIGHT = 800, 600
 FPS = 60
@@ -25,202 +26,182 @@ small_font = pygame.font.Font(None, 28)
 try:
     assets_path = os.path.join(BASE_DIR, 'assets', 'images')
     background_img = pygame.image.load(os.path.join(assets_path, 'background.jpg')).convert()
-    monster_sprites = {
-        'Squirtle': pygame.image.load(os.path.join(assets_path, 'player_monster.png')).convert_alpha(),
-        'Rayquaza': pygame.image.load(os.path.join(assets_path, 'ai_monster.png')).convert_alpha(),
-        'Pikachu': pygame.image.load(os.path.join(assets_path, 'pikachu.png')).convert_alpha(),
-        'Charmander': pygame.image.load(os.path.join(assets_path, 'charmander.png')).convert_alpha(),
-        'Bulbasaur': pygame.image.load(os.path.join(assets_path, 'bulbasaur.png')).convert_alpha(),
-        'Pidgeotto': pygame.image.load(os.path.join(assets_path, 'pidgeotto.png')).convert_alpha(),
+    monster_sprites = { 
+        'Squirtle': pygame.image.load(os.path.join(assets_path, 'squirtle.png')).convert_alpha(), 'Charmander': pygame.image.load(os.path.join(assets_path, 'charmander.png')).convert_alpha(), 'Bulbasaur': pygame.image.load(os.path.join(assets_path, 'bulbasaur.png')).convert_alpha(), 'Pidgeotto': pygame.image.load(os.path.join(assets_path, 'pidgeotto.png')).convert_alpha(), 'Vulpix': pygame.image.load(os.path.join(assets_path, 'vulpix.png')).convert_alpha(), 'Oddish': pygame.image.load(os.path.join(assets_path, 'oddish.png')).convert_alpha(), 'Pikachu': pygame.image.load(os.path.join(assets_path, 'pikachu.png')).convert_alpha(), 'Snorlax': pygame.image.load(os.path.join(assets_path, 'snorlax.png')).convert_alpha(), 'Rayquaza': pygame.image.load(os.path.join(assets_path, 'ai_monster.png')).convert_alpha(), 
     }
-except pygame.error as e:
-    print(f"FATAL ERROR: Unable to load asset: {e}\nMake sure you have all monster images in 'assets/images/'")
-    pygame.quit()
-    sys.exit()
+except (pygame.error, FileNotFoundError) as e: 
+    print(f"FATAL ERROR: Unable to load an asset. Please check file paths and names.\nError: {e}"); pygame.quit(); sys.exit()
 
-def get_sprite(name, is_ai=False):
-    sprite = monster_sprites.get(name)
-    if not sprite: return
-    sprite = pygame.transform.scale(sprite, (250, 250))
-    if is_ai:
-        sprite = pygame.transform.flip(sprite, True, False)
-    return sprite
+def get_sprite(name): return pygame.transform.scale(monster_sprites.get(name), (250, 250))
 
- 
-class GameManager:
-    def __init__(self):
-        self.all_monsters = self.create_all_monsters()
-        self.reset()
-    def create_all_monsters(self):
-        return {
-            'Squirtle': Monster("Squirtle", ('Water',), 100, 50, 65, 45, [Move("Tackle", 'Normal', 40), Move("Water Gun", 'Water', 55, 95)]),
-            'Charmander': Monster("Charmander", ('Fire',), 95, 60, 45, 65, [Move("Scratch", 'Normal', 40), Move("Ember", 'Fire', 40)]),
-            'Bulbasaur': Monster("Bulbasaur", ('Grass', 'Poison'), 105, 50, 50, 45, [Move("Tackle", 'Normal', 40), Move("Vine Whip", 'Grass', 45)]),
-            'Pidgeotto': Monster("Pidgeotto", ('Normal', 'Flying'), 110, 60, 55, 70, [Move("Quick Attack", 'Normal', 35), Move("Gust", 'Flying', 40)]),
-            'Pikachu': Monster("Pikachu", ('Electric',), 90, 55, 40, 90, [Move("Quick Attack", 'Normal', 35), Move("Thunder Shock", 'Electric', 40)]),
-            'Rayquaza': Monster("Rayquaza", ('Dragon', 'Flying'), 200, 80, 60, 95, [Move("Dragon Breath", 'Dragon', 60), Move("Aerial Ace", 'Flying', 50)]),
-        }
-    def reset(self):
-        self.player_team = [copy.deepcopy(self.all_monsters['Squirtle'])]
-        self.opponents = [copy.deepcopy(self.all_monsters[name]) for name in ['Charmander', 'Bulbasaur', 'Pidgeotto', 'Pikachu', 'Rayquaza']]
-        self.current_opponent_idx = 0; self.player_mon = self.player_team[0]; self.opponent_mon = self.opponents[self.current_opponent_idx]
-    def add_mon_to_team(self):
-        defeated_mon = self.opponents[self.current_opponent_idx]
-        if defeated_mon.name != 'Rayquaza': self.player_team.append(copy.deepcopy(defeated_mon))
-    def heal_player_team(self):
-        for mon in self.player_team: mon.current_hp = mon.max_hp; mon.is_fainted = False
-    def advance_to_next_opponent(self):
-        self.current_opponent_idx += 1
-        if self.current_opponent_idx < len(self.opponents): self.opponent_mon = self.opponents[self.current_opponent_idx]; return True
-        return False
-
- 
-def draw_text(text, font, color, surface, rect, aa=False):
-    words = [word.split(' ') for word in text.splitlines()]; space = font.size(' ')[0]; x, y = rect.left, rect.top
-    for line in words:
-        for word in line:
-            word_surface = font.render(word, aa, color); word_width, word_height = word_surface.get_size()
-            if x + word_width >= rect.right: x = rect.left; y += word_height
-            surface.blit(word_surface, (x, y)); x += word_width + space
-        x = rect.left; y += word_height
+# --- Drawing Functions ---
+def draw_text(text, font, color, surface, rect, aa=False, center=False):
+    if center:
+        text_surf = font.render(text, aa, color); text_rect = text_surf.get_rect(center=rect.center); surface.blit(text_surf, text_rect)
+    else:
+        words = text.split(' '); lines = []; current_line = ""
+        for word in words:
+            test_line = current_line + word + " "
+            if font.size(test_line)[0] < rect.width: current_line = test_line
+            else: lines.append(current_line); current_line = word + " "
+        lines.append(current_line); y = rect.top
+        for line in lines: line_surf = font.render(line, aa, color); surface.blit(line_surf, (rect.left, y)); y += font.get_height()
 
 def draw_health_bar(monster, x, y):
-    ratio = max(0, monster.current_hp / monster.max_hp)
-    pygame.draw.rect(screen, GRAY, (x, y, 200, 25)); pygame.draw.rect(screen, RED, (x, y, 200, 25))
-    if ratio > 0: pygame.draw.rect(screen, GREEN, (x, y, 200 * ratio, 25))
-    draw_text(f"HP: {monster.current_hp}/{monster.max_hp}", small_font, WHITE, screen, pygame.Rect(x+5, y+2, 200, 25))
-    pygame.draw.rect(screen, BLACK, (x, y, 200, 25), 2)
-
- 
-def draw_ui(player_mon, opponent_mon):
-    # Opponent Panel (Top-Left)
-    pygame.draw.rect(screen, GRAY, (20, 20, 300, 110), border_radius=10); pygame.draw.rect(screen, BLACK, (20, 20, 300, 110), 3, 10)
-    draw_text(opponent_mon.name, main_font, WHITE, screen, pygame.Rect(40, 30, 280, 110))
-    draw_health_bar(opponent_mon, 40, 70)
+    bar_rect = pygame.Rect(x, y, 200, 25); ratio = max(0, monster.display_hp / monster.max_hp)
+    pygame.draw.rect(screen, GRAY, bar_rect); pygame.draw.rect(screen, BLACK, bar_rect, 2)
+    health_color = GREEN if ratio > 0.5 else (255, 255, 0) if ratio > 0.2 else RED
+    if ratio > 0: pygame.draw.rect(screen, health_color, (x, y, bar_rect.width * ratio, bar_rect.height))
+    hp_text = f"{int(monster.display_hp)}/{monster.max_hp}"; hp_surf = small_font.render(hp_text, True, WHITE)
+    draw_text("HP", small_font, WHITE, screen, bar_rect.inflate(-10, -10)); screen.blit(hp_surf, (bar_rect.right - hp_surf.get_width() - 5, bar_rect.y + 2))
     
-    # Player Panel  
-    pygame.draw.rect(screen, GRAY, (480, 340, 300, 110), border_radius=10); pygame.draw.rect(screen, BLACK, (480, 340, 300, 110), 3, 10)
-    draw_text(player_mon.name, main_font, WHITE, screen, pygame.Rect(500, 350, 280, 110))
-    draw_health_bar(player_mon, 500, 390)
+def draw_ui(player_mon, ai_mon):
+    pygame.draw.rect(screen,GRAY,(20,20,300,110),border_radius=10);pygame.draw.rect(screen,BLACK,(20,20,300,110),3,10)
+    draw_text(ai_mon.name,main_font,WHITE,screen,pygame.Rect(40,30,280,110)); draw_health_bar(ai_mon,40,70) 
+    pygame.draw.rect(screen,GRAY,(480,340,300,110),border_radius=10);pygame.draw.rect(screen,BLACK,(480,340,300,110),3,10)
+    draw_text(player_mon.name,main_font,WHITE,screen,pygame.Rect(500,350,280,110)); draw_health_bar(player_mon,500,390) 
 
-def draw_bottom_panel(message, mouse_pos, player_team, player_mon, mode='message'):
-    box_rect = pygame.Rect(10, 460, 780, 130)
-    pygame.draw.rect(screen, GRAY, box_rect, border_radius=10)
-    pygame.draw.rect(screen, BLACK, box_rect, 3, 10)
-
-    if mode == 'message':
-        draw_text(message, small_font, WHITE, screen, pygame.Rect(30, 470, 740, 110))
-        return [], []  
-    elif mode == 'moves':
-        draw_text(message, small_font, WHITE, screen, pygame.Rect(30, 470, 400, 110))
-        buttons = []
-        for i, move in enumerate(player_mon.moves):
-            rect = pygame.Rect(430 + (i % 2) * 180, 470 + (i // 2) * 55, 170, 50)
-            buttons.append(rect)
-            color = BUTTON_HOVER_COLOR if rect.collidepoint(mouse_pos) else BUTTON_COLOR
-            pygame.draw.rect(screen, color, rect, border_radius=5)
-            text_rect = rect.inflate(-10, -10); text_rect.center = rect.center
-            draw_text(move.name, small_font, WHITE, screen, text_rect)
-        return buttons, []
-
-    elif mode == 'switch':
-        draw_text(message, small_font, WHITE, screen, pygame.Rect(30, 470, 400, 110))
-        buttons = []
-        for i, mon in enumerate(player_team):
-            if not mon.is_fainted:
-                rect = pygame.Rect(30 + i * 190, 520, 180, 60)
-                buttons.append((rect, mon))
-                color = BUTTON_HOVER_COLOR if rect.collidepoint(mouse_pos) else BUTTON_COLOR
-                pygame.draw.rect(screen, color, rect, border_radius=5)
-                text_rect = rect.inflate(-10, -10); text_rect.center = rect.center
-                draw_text(mon.name, small_font, WHITE, screen, text_rect)
-        return [], buttons
+def draw_bottom_panel(message,mouse_pos,pokemon_list,mode='message'):
+    box_rect=pygame.Rect(10,460,780,130);pygame.draw.rect(screen,GRAY,box_rect,border_radius=10);pygame.draw.rect(screen,BLACK,box_rect,3,10)
+    if mode=='message': draw_text(message,small_font,WHITE,screen,pygame.Rect(30,470,740,110)); return [],[]
+    buttons, switch_buttons = [], []
+    if mode=='moves':
+        draw_text(f"What will {pokemon_list.name} do?",small_font,WHITE,screen,pygame.Rect(30,470,360,110))
+        for i,move in enumerate(pokemon_list.moves):
+            rect=pygame.Rect(420+(i%2)*180,470+(i//2)*55,170,50); buttons.append(rect)
+            color=BUTTON_HOVER_COLOR if rect.collidepoint(mouse_pos) else BUTTON_COLOR; pygame.draw.rect(screen,color,rect,border_radius=5)
+            draw_text(move.name,small_font,WHITE,screen,rect,center=True)
+    elif mode in ['switch', 'choose_starter']:
+        title="Choose a Pokémon" if mode=='choose_starter' else "Switch to which Pokémon?"
+        draw_text(title,main_font,WHITE,screen,pygame.Rect(30, 470, 740, 40))
+        for i,mon in enumerate(pokemon_list):
+            if not mon.is_fainted or mode=='choose_starter': 
+                rect=pygame.Rect(30+(i%4)*190,520,180,60); switch_buttons.append((rect,mon))
+                color=BUTTON_HOVER_COLOR if rect.collidepoint(mouse_pos) else BUTTON_COLOR; pygame.draw.rect(screen,color,rect,border_radius=5)
+                draw_text(mon.name,small_font,WHITE,screen,rect,center=True)
+    return buttons, switch_buttons
 
 def draw_menu(title, options, mouse_pos):
-    buttons = []
-    draw_text(title, pygame.font.Font(None, 72), WHITE, screen, pygame.Rect(0, 100, SCREEN_WIDTH, 100))
+    buttons = []; draw_text(title, pygame.font.Font(None, 72), WHITE, screen, screen.get_rect(center=(SCREEN_WIDTH // 2, 150)), center=True)
     for i, option in enumerate(options):
         rect = pygame.Rect(SCREEN_WIDTH/2 - 150, 250 + i * 80, 300, 60); buttons.append(rect)
-        color = BUTTON_HOVER_COLOR if rect.collidepoint(mouse_pos) else BUTTON_COLOR; pygame.draw.rect(screen, color, rect, border_radius=10)
-        text_rect = rect.inflate(0,0); text_rect.center = rect.center; draw_text(option, main_font, WHITE, screen, text_rect)
+        color = BUTTON_HOVER_COLOR if rect.collidepoint(mouse_pos) else BUTTON_COLOR
+        pygame.draw.rect(screen, color, rect, border_radius=10); draw_text(option, main_font, WHITE, screen, rect, center=True)
     return buttons
+
+# --- GameManager Class ---
+class GameManager:
+    def __init__(self): self.all_monsters = self.create_all_monsters(); self.reset()
+    def create_all_monsters(self):
+        return { 'Squirtle': Monster("Squirtle", ('Water',), 100, 50, 65, 45, [Move("Tackle", 'Normal', 40), Move("Water Gun", 'Water', 55, 95), Move("Bubble", 'Water', 20), Move("Bite", 'Normal', 60)]), 'Charmander': Monster("Charmander", ('Fire',), 95, 60, 45, 65, [Move("Scratch", 'Normal', 40), Move("Ember", 'Fire', 40), Move("Fire Fang", 'Fire', 65), Move("Smokescreen", 'Normal', 0)]), 'Bulbasaur': Monster("Bulbasaur", ('Grass', 'Poison'), 105, 50, 50, 45, [Move("Tackle", 'Normal', 40), Move("Vine Whip", 'Grass', 45), Move("Absorb", 'Grass', 20), Move("PoisonPowder", 'Poison', 0)]), 'Pidgeotto': Monster("Pidgeotto", ('Normal', 'Flying'), 110, 60, 55, 70, [Move("Quick Attack", 'Normal', 35), Move("Gust", 'Flying', 40), Move("Wing Attack", 'Flying', 60), Move("Roost", 'Flying', 0)]), 'Pikachu': Monster("Pikachu", ('Electric',), 90, 55, 40, 90, [Move("Quick Attack", 'Normal', 35), Move("Thunder Shock", 'Electric', 40), Move("Thunderbolt", 'Electric', 90), Move("Iron Tail", 'Steel', 100, 75)]) }
+    def reset(self): self.player_team, self.player_mon = [], None; self.ai_team = [copy.deepcopy(self.all_monsters[name]) for name in ['Charmander', 'Pidgeotto', 'Pikachu']]; self.ai_mon = self.ai_team[0]; self.heal_team(self.ai_team)
+    def set_player_starter(self, name): self.player_team.append(copy.deepcopy(self.all_monsters[name])); self.player_mon = self.player_team[0]
+    def heal_team(self, team):
+        for mon in team: mon.current_hp = mon.max_hp; mon.is_fainted = False; mon.display_hp = mon.max_hp
+
+# --- Animator Class ---
+class Animator:
+    def __init__(self,is_ai):self.monster=None;self.is_ai=is_ai;self.base_pos=(50,240)if not is_ai else(500,30);self.offset=[0,0];self.is_active=False;self.flash_color=(255,255,255,0);self.animation_start_time=0;self.animation_duration=0
+    def set_monster(self,monster):self.monster=monster
+    def start_attack(self):self.is_active=True;self.animation_start_time=time.time();self.animation_duration=0.5
+    def start_damage(self):self.is_active=True;self.animation_start_time=time.time();self.animation_duration=0.3
+    def update(self):
+        if not self.is_active:return
+        elapsed=time.time()-self.animation_start_time
+        if elapsed>self.animation_duration:self.is_active=False;self.offset=[0,0];self.flash_color=(255,255,255,0);return
+        if self.animation_duration==0.5:prog=elapsed/self.animation_duration;self.offset[0]=50*(prog*2 if prog<0.5 else(1-prog)*2)*(-1 if self.is_ai else 1)
+        if self.animation_duration==0.3:prog=1-abs(0.5-elapsed/self.animation_duration)*2;self.flash_color=(255,255,255,180*prog)
+    def draw(self,surface):
+        if not self.monster:return
+        pos=(self.base_pos[0]+self.offset[0],self.base_pos[1]+self.offset[1]);sprite=get_sprite(self.monster.name)
+        if self.is_ai:sprite=pygame.transform.flip(sprite,True,False)
+        if self.flash_color[3]>0:flash_surf=pygame.Surface(sprite.get_size(),pygame.SRCALPHA);flash_surf.fill(self.flash_color);sprite.blit(flash_surf,(0,0))
+        surface.blit(sprite,pos)
 
 # --- Main Game Loop ---
 def main():
-    game_manager = GameManager()
-    battle = Battle()
-    game_state = 'MAIN_MENU'
-    message = ""
-    buttons, move_buttons, switch_buttons = [], [], []
-    
-    running = True
-    while running:
+    gm, battle = GameManager(), Battle(); state='MAIN_MENU'; msg=""; buttons,m_btns,s_btns=[],[],[]
+    p_anim, ai_anim = Animator(False), Animator(True); turn_q, anim_timer = [], 0
+    while True:
         mouse_pos = pygame.mouse.get_pos()
         for event in pygame.event.get():
-            if event.type == pygame.QUIT: running = False
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if game_state == 'MAIN_MENU':
-                    if buttons[0].collidepoint(mouse_pos): game_state = 'BATTLE_INTRO'
-                    elif buttons[1].collidepoint(mouse_pos): game_state = 'RULES'
-                elif game_state == 'RULES' or game_state in ['BATTLE_WON', 'GAME_OVER']:
-                    if game_state == 'BATTLE_WON':
-                        game_manager.add_mon_to_team(); game_manager.heal_player_team()
-                        if not game_manager.advance_to_next_opponent(): message = "You are a master trainer! You win!"; game_state = 'GAME_OVER'
-                        else: game_state = 'BATTLE_INTRO'
-                    else: game_manager.reset(); game_state = 'MAIN_MENU'
-                elif game_state == 'CHOOSE_STARTER' or game_state == 'SWITCH_POKEMON':
-                    for rect, mon in switch_buttons:
-                        if rect.collidepoint(mouse_pos):
-                            game_manager.player_mon = mon
-                            if game_state == 'SWITCH_POKEMON':
-                                ai_move = find_best_move(game_manager.opponent_mon, game_manager.player_mon); turn_order = [(game_manager.opponent_mon, ai_move, game_manager.player_mon)]
-                                game_state = 'RUN_TURN'
-                            else: game_state = 'AWAITING_INPUT'
-                elif game_state == 'AWAITING_INPUT':
-                    for i, button in enumerate(move_buttons):
-                        if button.collidepoint(mouse_pos):
-                            player_move = game_manager.player_mon.moves[i]; ai_move = find_best_move(game_manager.opponent_mon, game_manager.player_mon)
-                             
-                            turn_order = [(game_manager.player_mon, player_move, game_manager.opponent_mon), (game_manager.opponent_mon, ai_move, game_manager.player_mon)] if game_manager.player_mon.speed >= game_manager.opponent_mon.speed else [(game_manager.opponent_mon, ai_move, game_manager.player_mon), (game_manager.player_mon, player_move, game_manager.opponent_mon)]
-                            game_state = 'RUN_TURN'
-
-        screen.blit(background_img, (0, 0))
-        if game_state == 'MAIN_MENU':
-            buttons = draw_menu("Minimax Monsters", ["Start Game", "Rules"], mouse_pos)
-        elif game_state == 'RULES':
-            rules_text = ("How the AI Thinks (Minimax):\n\n1. The AI builds a tree of all possible future moves.\n2. It assumes you will always make the best move (Minimizer).\n3. It then chooses the move that gives IT the best outcome, even against your perfect play (Maximizer).\n4. Alpha-Beta Pruning heavily optimizes this by ignoring branches that won't change the final decision.\n\nWatch the terminal to see this in action!")
-            draw_text(rules_text, small_font, WHITE, screen, pygame.Rect(50, 150, 700, 400))
-            buttons = [pygame.Rect(SCREEN_WIDTH/2 - 150, 500, 300, 60)]; pygame.draw.rect(screen, BUTTON_COLOR, buttons[0], border_radius=10); draw_text("Back", main_font, WHITE, screen, buttons[0])
-        else:
-            screen.blit(get_sprite(game_manager.player_mon.name), (50, 240)); screen.blit(get_sprite(game_manager.opponent_mon.name, True), (500, 30)); draw_ui(game_manager.player_mon, game_manager.opponent_mon)
-            if game_state == 'AWAITING_INPUT':
-                move_buttons, _ = draw_bottom_panel(f"What will {game_manager.player_mon.name} do?", mouse_pos, game_manager.player_team, game_manager.player_mon, mode='moves')
-            elif game_state == 'CHOOSE_STARTER':
-                _, switch_buttons = draw_bottom_panel("Choose your Pokémon!", mouse_pos, game_manager.player_team, game_manager.player_mon, mode='switch')
-            elif game_state == 'SWITCH_POKEMON':
-                _, switch_buttons = draw_bottom_panel(f"{game_manager.player_mon.name} fainted!", mouse_pos, game_manager.player_team, game_manager.player_mon, mode='switch')
-            else: draw_bottom_panel(message, mouse_pos, game_manager.player_team, game_manager.player_mon, mode='message')
+            if event.type == pygame.QUIT: pygame.quit(); sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN and not p_anim.is_active and not ai_anim.is_active and time.time() > anim_timer:
+                if state=='MAIN_MENU':
+                    if buttons and buttons[0].collidepoint(mouse_pos): state='CHOOSE_STARTER'
+                    elif buttons and len(buttons)>1 and buttons[1].collidepoint(mouse_pos): state='RULES'
+                elif state in ['RULES', 'GAME_OVER', 'BATTLE_WON']: gm.reset(); state='MAIN_MENU'
+                elif state in ['CHOOSE_STARTER', 'SWITCH_POKEMON', 'PLAYER_FORCED_SWITCH']:
+                    for rect,mon in s_btns:
+                        if rect.collidepoint(mouse_pos) and not mon.is_fainted:
+                            if state == 'CHOOSE_STARTER': gm.set_player_starter(mon.name)
+                            gm.player_mon=mon;p_anim.set_monster(mon);msg=f"Go! {mon.name}!";anim_timer=time.time()+1.0
+                            if state != 'CHOOSE_STARTER': turn_q.append(('AI_DECISION',))
+                            state = 'BATTLE_INTRO' if state == 'CHOOSE_STARTER' else 'NEXT_ACTION'
+                elif state=='AWAITING_INPUT':
+                    for i,button in enumerate(m_btns):
+                        if button.collidepoint(mouse_pos): turn_q=[('PLAYER_ATTACK',gm.player_mon.moves[i]),('CHECK_FAINT',gm.ai_mon),('AI_DECISION',),('CHECK_FAINT',gm.player_mon),('END_TURN',)]; state='NEXT_ACTION'
+                elif state in ['PLAYER_MESSAGE', 'AI_MESSAGE']: state='NEXT_ACTION'
         
+        p_anim.update(); ai_anim.update()
+        for mon in gm.player_team + gm.ai_team:
+            if mon.display_hp != mon.current_hp: step = max(1, int(abs(mon.display_hp-mon.current_hp)*0.1)); mon.display_hp += -step if mon.display_hp > mon.current_hp else step
+
+        screen.blit(background_img,(0,0))
+        if state=='MAIN_MENU': buttons=draw_menu("Minimax Monster Battle",["Start Game","Rules"],mouse_pos)
+        elif state=='RULES': draw_text("AI builds a tree of all moves, assumes you play optimally, and picks its best move. Alpha-Beta Pruning skips bad branches.",small_font,WHITE,screen,pygame.Rect(50,150,700,400));buttons=[pygame.Rect(300,500,200,50)];pygame.draw.rect(screen,BUTTON_COLOR,buttons[0],border_radius=10);draw_text("Back",main_font,WHITE,screen,buttons[0],center=True)
+        else:
+            ai_anim.draw(screen)
+            if gm.player_mon: p_anim.draw(screen); draw_ui(gm.player_mon, gm.ai_mon)
+            
+            # *** FIX: Provide the correct list of monsters to draw for each state ***
+            if state=='AWAITING_INPUT':
+                m_btns,s_btns=draw_bottom_panel(msg,mouse_pos,gm.player_mon,mode='moves')
+            elif state=='CHOOSE_STARTER':
+                starter_options = [gm.all_monsters['Squirtle'], gm.all_monsters['Charmander'], gm.all_monsters['Bulbasaur']]
+                m_btns,s_btns=draw_bottom_panel(msg,mouse_pos,starter_options,mode='choose_starter')
+            elif state in ['SWITCH_POKEMON', 'PLAYER_FORCED_SWITCH']:
+                m_btns,s_btns=draw_bottom_panel(msg,mouse_pos,gm.player_team,mode='switch')
+            else:
+                m_btns,s_btns=draw_bottom_panel(msg,mouse_pos,[],mode='message') # Pass empty list for message mode
         pygame.display.flip()
 
-        if game_state == 'BATTLE_INTRO':
-            message = f"You are challenged by {game_manager.opponent_mon.name}!"; pygame.display.flip(); time.sleep(2); game_state = 'CHOOSE_STARTER'
-        elif game_state == 'RUN_TURN':
-            for attacker, move, defender in turn_order:
-                if not attacker.is_fainted and not defender.is_fainted:
-                    message = battle.handle_attack(attacker, defender, move)
-                    screen.blit(background_img, (0, 0)); screen.blit(get_sprite(game_manager.player_mon.name), (50, 240)); screen.blit(get_sprite(game_manager.opponent_mon.name, True), (500, 30)); draw_ui(game_manager.player_mon, game_manager.opponent_mon); draw_bottom_panel(message, mouse_pos, game_manager.player_team, game_manager.player_mon, mode='message'); pygame.display.flip(); time.sleep(2)
-            if game_manager.opponent_mon.is_fainted: message = f"You defeated {game_manager.opponent_mon.name}!"; game_state = 'BATTLE_WON'
-            elif game_manager.player_mon.is_fainted:
-                message = f"{game_manager.player_mon.name} fainted!"
-                if any(not mon.is_fainted for mon in game_manager.player_team if mon is not game_manager.player_mon): game_state = 'SWITCH_POKEMON'
-                else: message = "You have no more Pokémon! You lose."; game_state = 'GAME_OVER'
-            else: game_state = 'AWAITING_INPUT'
-        
+        if time.time() < anim_timer or p_anim.is_active or ai_anim.is_active: continue
+        if state=='BATTLE_INTRO': p_anim.set_monster(gm.player_mon);ai_anim.set_monster(gm.ai_mon);msg=f"Trainer challenges you with {gm.ai_mon.name}!";anim_timer=time.time()+1.5;state='AWAITING_INPUT'
+        elif state=='NEXT_ACTION' and turn_q:
+            action, *args = turn_q.pop(0)
+            if action=='PLAYER_ATTACK':
+                move=args[0];msg=f"{gm.player_mon.name} uses {move.name}!";p_anim.start_attack();anim_timer=time.time()+0.5;turn_q.insert(0,('PLAYER_DAMAGE',move))
+            elif action=='PLAYER_DAMAGE':
+                move=args[0];info=battle.calculate_damage(gm.player_mon,gm.ai_mon,move);gm.ai_mon.take_damage(info['damage']);msg=info['effectiveness_msg'] or f"Dealt {info['damage']} damage.";ai_anim.start_damage();anim_timer=time.time()+1.5;state='PLAYER_MESSAGE'
+            elif action=='CHECK_FAINT':
+                mon=args[0]
+                if mon.is_fainted:
+                    turn_q.clear(); msg=f"{mon.name} fainted!"
+                    if mon is gm.ai_mon:
+                        if all(m.is_fainted for m in gm.ai_team): state='BATTLE_WON'
+                        else: turn_q.append(('AI_FORCED_SWITCH',))
+                    else:
+                        if any(not m.is_fainted for m in gm.player_team): state='PLAYER_FORCED_SWITCH'
+                        else: state='GAME_OVER'
+                    anim_timer=time.time()+1.5
+            elif action=='AI_DECISION':
+                if not gm.ai_mon.is_fainted:
+                    ai_action = find_best_action(gm.ai_team, gm.player_team, gm.ai_mon, gm.player_mon)
+                    if isinstance(ai_action, Move): turn_q.insert(0, ('AI_ATTACK', ai_action))
+                    else:
+                        mon_name = ai_action[1]; new_mon = next((m for m in gm.ai_team if m.name == mon_name), None)
+                        if new_mon: turn_q.insert(0, ('AI_SWITCH', new_mon))
+            elif action=='AI_ATTACK':
+                move=args[0];msg=f"{gm.ai_mon.name} uses {move.name}!";ai_anim.start_attack();anim_timer=time.time()+0.5;turn_q.insert(0,('AI_DAMAGE',move))
+            elif action=='AI_DAMAGE':
+                move=args[0];info=battle.calculate_damage(gm.ai_mon,gm.player_mon,move);gm.player_mon.take_damage(info['damage']);msg=info['effectiveness_msg'] or f"Dealt {info['damage']} damage.";p_anim.start_damage();anim_timer=time.time()+1.5;state='AI_MESSAGE'
+            elif action=='AI_SWITCH':
+                mon=args[0];gm.ai_mon=mon;ai_anim.set_monster(mon);msg=f"Trainer sends out {mon.name}!";anim_timer=time.time()+1.5;state='AI_MESSAGE'
+            elif action=='AI_FORCED_SWITCH':
+                new_mon=next((m for m in gm.ai_team if not m.is_fainted),None)
+                if new_mon: turn_q.insert(0, ('AI_SWITCH', new_mon))
+            elif action=='END_TURN': state='AWAITING_INPUT'
         clock.tick(FPS)
 
-    pygame.quit()
-    sys.exit()
-
-if __name__ == "__main__":
-    main()
+if __name__=="__main__":main()

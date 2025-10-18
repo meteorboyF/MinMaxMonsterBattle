@@ -2,7 +2,6 @@
 
 class Move:
     """A class to represent a move with a name, type, power, and accuracy."""
-     
     def __init__(self, name: str, move_type: str, power: int, accuracy: int = 100):
         self.name = name
         self.type = move_type
@@ -11,7 +10,6 @@ class Move:
 
 class Monster:
     """A class to represent a monster with stats, types, and moves."""
-     
     def __init__(self, name: str, mon_type: tuple, hp: int, attack: int, defense: int, speed: int, moves: list):
         self.name = name
         self.type = mon_type
@@ -22,7 +20,7 @@ class Monster:
         self.speed = speed
         self.moves = moves
         self.is_fainted = False
-        
+        self.display_hp = hp
 
     def take_damage(self, damage: int):
         """Applies damage and checks if the monster has fainted."""
