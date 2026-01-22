@@ -46,41 +46,68 @@ def minimax(ai_team, player_team, ai_active_mon, player_active_mon, depth, alpha
 
     if is_maximizing:
         max_eval, best_action = float('-inf'), None
-        print(f"{indent}AI TURN (Depth {depth}) | Alpha: {alpha:.2f}, Beta: {beta:.2f}")
+        # print(f"{indent}AI TURN (Depth {depth}) | Alpha: {alpha:.2f}, Beta: {beta:.2f}")
 
-        for move in sorted(ai_active_mon.moves, key=lambda m: m.power, reverse=True):
-            if move.current_pp == 0: continue
+        # 1. Consider Moves
+        possible_actions = [m for m in ai_active_mon.moves if m.current_pp > 0]
+        # 2. Consider Switches (only if we have other healthy mons)
+        available_switches = [m for m in ai_team if not m.is_fainted and m.name != ai_active_mon.name]
+        
+        # Heuristic: If we are low HP/bad match, prioritize checking switches first? 
+        # For now, just append them.
+        actions = possible_actions + available_switches
+        
+        if not actions: # Struggle? Or simple pass if no moves (shouldn't happen in this simplified version)
+             return evaluate_state(ai_team, player_team, ai_active_mon, player_active_mon), None
 
+        for action in actions:
             sim_ai_team, sim_player_team = copy.deepcopy(ai_team), copy.deepcopy(player_team)
+            
+            # Re-link active mons to the deepcopied teams
             sim_ai_mon = get_mon_by_name(sim_ai_team, ai_active_mon.name)
             sim_player_mon = get_mon_by_name(sim_player_team, player_active_mon.name)
-            
-            sim_ai_mon_move = next(m for m in sim_ai_mon.moves if m.name == move.name)
-            sim_ai_mon_move.current_pp -= 1
 
-            print(f"{indent}  - Simulating AI use of '{move.name}'...")
-            if move.power > 0:
-                damage = battle_sim.calculate_damage(sim_ai_mon, sim_player_mon, move)['damage']
-                sim_player_mon.take_damage(damage)
-            
-            battle_sim.apply_move_effects(sim_ai_mon, sim_player_mon, move)
-            
-            evaluation, _ = minimax(sim_ai_team, sim_player_team, sim_ai_mon, sim_player_mon, depth - 1, alpha, beta, False, indent + "    ")
-            print(f"{indent}  '{move.name}' resulted in a board score of: {evaluation:.2f}")
+            if isinstance(action, Move):
+                sim_ai_mon_move = next(m for m in sim_ai_mon.moves if m.name == action.name)
+                sim_ai_mon_move.current_pp -= 1
+                
+                # print(f"{indent}  - Simulating AI use of '{action.name}'...")
+                if action.power > 0:
+                    damage = battle_sim.calculate_damage(sim_ai_mon, sim_player_mon, action)['damage']
+                    sim_player_mon.take_damage(damage)
+                
+                battle_sim.apply_move_effects(sim_ai_mon, sim_player_mon, action)
+                next_ai_mon = sim_ai_mon # Stays same
+            else: # Switch Action
+                # print(f"{indent}  - Simulating AI switch to '{action.name}'...")
+                next_ai_mon = get_mon_by_name(sim_ai_team, action.name)
+                # Reset stats on switch
+                next_ai_mon.reset_battle_stats()
 
-            if evaluation > max_eval: max_eval, best_action = evaluation, move
+            # Pass the (potentially new) active monster to the next depth
+            evaluation, _ = minimax(sim_ai_team, sim_player_team, next_ai_mon, sim_player_mon, depth - 1, alpha, beta, False, indent + "    ")
+            # print(f"{indent}  Action resulted in: {evaluation:.2f}")
+
+            if evaluation > max_eval: max_eval, best_action = evaluation, action
             alpha = max(alpha, evaluation)
-            if beta <= alpha: print(f"{indent}  >> PRUNING (Beta {beta:.2f} <= Alpha {alpha:.2f})"); break
+            if beta <= alpha: 
+                # print(f"{indent}  >> PRUNING (Beta {beta:.2f} <= Alpha {alpha:.2f})")
+                break
         
-        return max_eval, best_action or ai_active_mon.moves[0]
+        return max_eval, best_action
     
     else: # Minimizing Player
         min_eval, best_action = float('inf'), None
-        print(f"{indent}PLAYER TURN (Depth {depth}) | Alpha: {alpha:.2f}, Beta: {beta:.2f}")
+        # print(f"{indent}PLAYER TURN (Depth {depth}) | Alpha: {alpha:.2f}, Beta: {beta:.2f}")
 
-        for move in sorted(player_active_mon.moves, key=lambda m: m.power, reverse=True):
-            if move.current_pp == 0: continue
-            
+        # Player Moves
+        possible_actions = [m for m in player_active_mon.moves if m.current_pp > 0]
+        # Player Switches (Assuming player considers switching too for perfect play, but expensive to calc. 
+        # Let's limit player simulation to just checking attacks for now to save performance, 
+        # OR involve switching if player is in a terrible spot?
+        # For this version, let's keep player simulation to MOVES only to speed up AI.)
+        
+        for move in sorted(possible_actions, key=lambda m: m.power, reverse=True):
             sim_ai_team, sim_player_team = copy.deepcopy(ai_team), copy.deepcopy(player_team)
             sim_ai_mon = get_mon_by_name(sim_ai_team, ai_active_mon.name)
             sim_player_mon = get_mon_by_name(sim_player_team, player_active_mon.name)
@@ -88,7 +115,7 @@ def minimax(ai_team, player_team, ai_active_mon, player_active_mon, depth, alpha
             sim_player_mon_move = next(m for m in sim_player_mon.moves if m.name == move.name)
             sim_player_mon_move.current_pp -= 1
             
-            print(f"{indent}  - Simulating Player use of '{move.name}'...")
+            # print(f"{indent}  - Simulating Player use of '{move.name}'...")
             if move.power > 0:
                 damage = battle_sim.calculate_damage(sim_player_mon, sim_ai_mon, move)['damage']
                 sim_ai_mon.take_damage(damage)
@@ -99,12 +126,15 @@ def minimax(ai_team, player_team, ai_active_mon, player_active_mon, depth, alpha
 
             if evaluation < min_eval: min_eval, best_action = evaluation, move
             beta = min(beta, evaluation)
-            if beta <= alpha: print(f"{indent}  >> PRUNING (Beta {beta:.2f} <= Alpha {alpha:.2f})"); break
+            if beta <= alpha: 
+                # print(f"{indent}  >> PRUNING (Beta {beta:.2f} <= Alpha {alpha:.2f})")
+                break
         
         return min_eval, best_action or player_active_mon.moves[0]
 
 def find_best_action(ai_team, player_team, ai_active_mon, player_active_mon, depth=3):
-    print("\n--- AI IS THINKING (SIMULATION START) ---")
-    _, best_move = minimax(ai_team, player_team, ai_active_mon, player_active_mon, depth=depth, alpha=float('-inf'), beta=float('inf'), is_maximizing=True)
-    print(f"--- SIMULATION END: AI DECIDED TO ATTACK WITH '{best_move.name}' ---\n")
-    return best_move
+    print("\n--- AI IS THINKING ---")
+    _, best_action = minimax(ai_team, player_team, ai_active_mon, player_active_mon, depth=depth, alpha=float('-inf'), beta=float('inf'), is_maximizing=True)
+    name = best_action.name if hasattr(best_action, 'name') else "Unknown"
+    print(f"--- AI DECIDED: {name} ---\n")
+    return best_action

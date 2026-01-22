@@ -34,7 +34,12 @@ try:
         'Charmander': pygame.image.load(os.path.join(assets_path, 'charmander.png')).convert_alpha(),
         'Bulbasaur': pygame.image.load(os.path.join(assets_path, 'bulbasaur.png')).convert_alpha(),
         'Pidgeotto': pygame.image.load(os.path.join(assets_path, 'pidgeotto.png')).convert_alpha(),
-        'Pikachu': pygame.image.load(os.path.join(assets_path, 'pikachu.png')).convert_alpha()
+        'Pikachu': pygame.image.load(os.path.join(assets_path, 'pikachu.png')).convert_alpha(),
+        'Geodude': pygame.image.load(os.path.join(assets_path, 'geodude.png')).convert_alpha(),
+        'Gastly': pygame.image.load(os.path.join(assets_path, 'gastly.png')).convert_alpha(),
+        'Oddish': pygame.image.load(os.path.join(assets_path, 'oddish.png')).convert_alpha(),
+        'Snorlax': pygame.image.load(os.path.join(assets_path, 'snorlax.png')).convert_alpha(),
+        'Vulpix': pygame.image.load(os.path.join(assets_path, 'vulpix.png')).convert_alpha()
     }
 except (pygame.error, FileNotFoundError) as e: 
     print(f"FATAL ERROR: Unable to load an asset. Please check file paths and names.\nError: {e}")
@@ -176,77 +181,8 @@ def draw_menu(title, options, mouse_pos):
     return buttons
 
 # --- GameManager Class ---
-class GameManager:
-    def __init__(self):
-        self.all_monsters = self.create_all_monsters()
-        self.reset()
+from game_logic.game_manager import GameManager
 
-    def create_all_monsters(self):
-        # PP values have been adjusted for faster, more decisive battles.
-        # Weaker moves are in the 10-12 range, powerful/utility moves are in the 5-8 range.
-        return {
-            'Squirtle': Monster("Squirtle", ('Water',), 100, 50, 65, 45, [
-                Move("Tackle", 'Normal', 40, 100, 12),
-                Move("Water Gun", 'Water', 55, 100, 8),
-                Move("Withdraw", 'Water', 0, 100, 8, stat_change=('defense', 1), target='self'),
-                Move("Bite", 'Normal', 60, 100, 8)
-            ]),
-            'Charmander': Monster("Charmander", ('Fire',), 95, 60, 45, 65, [
-                Move("Scratch", 'Normal', 40, 100, 12),
-                Move("Ember", 'Fire', 40, 100, 10),
-                Move("Fire Fang", 'Fire', 65, 95, 5),
-                Move("Growl", 'Normal', 0, 100, 8, stat_change=('attack', -1), target='opponent')
-            ]),
-            'Bulbasaur': Monster("Bulbasaur", ('Grass', 'Poison'), 105, 50, 50, 45, [
-                Move("Tackle", 'Normal', 40, 100, 12),
-                Move("Vine Whip", 'Grass', 45, 100, 10),
-                Move("PoisonPowder", 'Poison', 0, 75, 5, status_effect=('poisoned', 100)),
-                Move("Growl", 'Normal', 0, 100, 8, stat_change=('attack', -1))
-            ]),
-            'Pidgeotto': Monster("Pidgeotto", ('Normal', 'Flying'), 110, 60, 55, 70, [
-                Move("Quick Attack", 'Normal', 40, 100, 12),
-                Move("Gust", 'Flying', 40, 100, 10),
-                Move("Wing Attack", 'Flying', 60, 100, 5),
-                Move("Sand Attack", 'Normal', 0, 100, 8, stat_change=('defense', -1), target='opponent')
-            ]),
-            'Pikachu': Monster("Pikachu", ('Electric',), 90, 55, 40, 90, [
-                Move("Quick Attack", 'Normal', 40, 100, 12),
-                Move("Thunder Shock", 'Electric', 40, 100, 10, status_effect=('paralyzed', 10)),
-                Move("Thunderbolt", 'Electric', 90, 100, 5),
-                Move("Double Team", 'Normal', 0, 100, 8, stat_change=('defense', 1), target='self')
-            ])
-        }
-    
-    def reset(self):
-        self.player_team, self.player_mon = [], None
-        self.opponent_pool = [copy.deepcopy(self.all_monsters[name]) for name in ['Charmander', 'Pidgeotto', 'Pikachu']]
-        self.ai_mon = self.opponent_pool[0]
-        self.ai_team = [self.ai_mon]
-        self.current_opponent_idx = 0
-    
-    def set_player_starter(self, name):
-        self.player_team = [copy.deepcopy(self.all_monsters[name])]
-        self.player_mon = self.player_team[0]
-    
-    def add_defeated_to_roster(self, defeated_mon):
-        if defeated_mon.name not in [m.name for m in self.player_team]:
-            self.player_team.append(copy.deepcopy(defeated_mon))
-    
-    def set_next_opponent(self):
-        self.current_opponent_idx += 1
-        if self.current_opponent_idx < len(self.opponent_pool):
-            self.ai_mon = self.opponent_pool[self.current_opponent_idx]
-            self.ai_team = [self.ai_mon]
-            return True
-        return False
-    
-    def full_heal_player_team(self):
-        for mon in self.player_team:
-            mon.current_hp = mon.max_hp
-            mon.is_fainted = False
-            mon.display_hp = mon.max_hp
-            mon.restore_pp()
-            mon.reset_battle_stats()
 
 # --- Animator Class ---
 class Animator:
@@ -306,6 +242,7 @@ def main():
     state = 'MAIN_MENU'
     msg = ""
     buttons, m_btns, s_btns = [], [], []
+    switch_btn_rect = None
     p_anim, ai_anim = Animator(False), Animator(True)
     turn_q, anim_timer = [], 0
 
@@ -348,12 +285,36 @@ def main():
                             msg = f"Go, {gm.player_mon.name}!"
                             anim_timer = time.time() + MESSAGE_DURATION / 2
                             state = 'BATTLE_INTRO' if state == 'CHOOSE_STARTER' else 'AWAITING_INPUT'
+                
                 elif state == 'AWAITING_INPUT':
+                    # Check Switch Button
+                    if switch_btn_rect and switch_btn_rect.collidepoint(mouse_pos):
+                        state = 'PLAYER_SWITCH_MENU'
+                        msg = "Choose a Pokémon to switch to!"
+                        continue
+
                     for i, button in enumerate(m_btns):
-                        move = gm.player_mon.moves[i]
-                        if button.collidepoint(mouse_pos) and move.current_pp > 0:
-                            turn_q = [('PLAYER_TURN', move), ('AI_TURN',), ('END_TURN_EFFECTS',), ('END_TURN',)]
+                        if i < len(gm.player_mon.moves):
+                            move = gm.player_mon.moves[i]
+                            if button.collidepoint(mouse_pos) and move.current_pp > 0:
+                                turn_q = [('PLAYER_TURN', move), ('AI_TURN',), ('END_TURN_EFFECTS',), ('END_TURN',)]
+                                state = 'NEXT_ACTION'
+                
+                elif state == 'PLAYER_SWITCH_MENU':
+                     # Check Cancel Button (simulated by checking if not clicking a mon, or add a back button. 
+                     # For now, if they click outside, maybe go back? 
+                     # Let's just rely on clicking a mon. Maybe add a "Back" button later.
+                     # Actually, reusing draw_bottom_panel 'pre_battle_switch' style which doesn't have a back button.
+                     # Let's add a back button rect logic check if we can.
+                     if switch_btn_rect and switch_btn_rect.collidepoint(mouse_pos): # Reuse switch button as "Back" or "Cancel"
+                         state = 'AWAITING_INPUT'
+                         continue
+
+                     for rect, mon in s_btns:
+                        if rect.collidepoint(mouse_pos) and not mon.is_fainted and mon != gm.player_mon:
+                            turn_q = [('PLAYER_SWITCH', mon), ('AI_TURN',), ('END_TURN_EFFECTS',), ('END_TURN',)]
                             state = 'NEXT_ACTION'
+
                 elif state in ['PLAYER_MESSAGE', 'AI_MESSAGE']:
                     state = 'NEXT_ACTION'
         
@@ -361,7 +322,8 @@ def main():
         vfx.update()
         p_anim.update()
         ai_anim.update()
-        for mon in gm.player_team + [gm.ai_mon]:
+        all_mons = gm.player_team + gm.ai_team if gm.ai_team else []
+        for mon in all_mons:
             if mon and mon.display_hp != mon.current_hp:
                 step = max(1, int(abs(mon.display_hp - mon.current_hp) * 0.1))
                 mon.display_hp += -step if mon.display_hp > mon.current_hp else step
@@ -381,6 +343,20 @@ def main():
             
             if state == 'AWAITING_INPUT':
                 m_btns, s_btns = draw_bottom_panel(msg, mouse_pos, [], gm.player_mon, mode='moves')
+                # Draw Switch Button
+                switch_btn_rect = pygame.Rect(620, 530, 160, 50) # Bottom rightish
+                color = BUTTON_HOVER_COLOR if switch_btn_rect.collidepoint(mouse_pos) else BUTTON_COLOR
+                pygame.draw.rect(screen, color, switch_btn_rect, border_radius=5)
+                draw_text("SWITCH", small_font, WHITE, screen, switch_btn_rect, center=True)
+            
+            elif state == 'PLAYER_SWITCH_MENU':
+                m_btns, s_btns = draw_bottom_panel(msg, mouse_pos, gm.player_team, None, 'pre_battle_switch')
+                # Draw Back Button
+                switch_btn_rect = pygame.Rect(650, 470, 100, 30)
+                color = BUTTON_HOVER_COLOR if switch_btn_rect.collidepoint(mouse_pos) else BUTTON_COLOR
+                pygame.draw.rect(screen, color, switch_btn_rect, border_radius=5)
+                draw_text("BACK", small_font, WHITE, screen, switch_btn_rect, center=True)
+
             elif state == 'CHOOSE_STARTER':
                 m_btns, s_btns = draw_bottom_panel(msg, mouse_pos, [gm.all_monsters['Squirtle'], gm.all_monsters['Charmander'], gm.all_monsters['Bulbasaur']], None, mode='choose_starter')
             elif state in ['PLAYER_FORCED_SWITCH', 'PRE_BATTLE_SWITCH']:
@@ -428,31 +404,56 @@ def main():
                 anim_timer = time.time() + MESSAGE_DURATION
                 turn_q.insert(0, ('CHECK_FAINT', gm.ai_mon))
             
+            elif action == 'PLAYER_SWITCH':
+                new_mon = args[0]
+                msg = f"Come back {gm.player_mon.name}!\nGo {new_mon.name}!"
+                gm.player_mon.reset_battle_stats()
+                gm.player_mon = new_mon
+                p_anim.set_monster(gm.player_mon)
+                state = 'PLAYER_MESSAGE'
+                anim_timer = time.time() + MESSAGE_DURATION
+
             elif action == 'AI_TURN':
                 if not gm.ai_mon.is_fainted:
                     if gm.ai_mon.status == 'paralyzed' and random.random() < 0.25:
                         msg = f"{gm.ai_mon.name} is paralyzed!"
                         vfx.add_effect("Paralyzed!", STATUS_COLORS['paralyzed'])
+                        state = 'AI_MESSAGE'
+                        anim_timer = time.time() + MESSAGE_DURATION
                     else:
-                        move = find_best_action(gm.ai_team, gm.player_team, gm.ai_mon, gm.player_mon, depth=2)
-                        move.current_pp -= 1
-                        msg = f"{gm.ai_mon.name} uses {move.name}!"
-                        ai_anim.start_attack()
-                        if move.power > 0: 
-                            info = battle.calculate_damage(gm.ai_mon, gm.player_mon, move)
-                            gm.player_mon.take_damage(info['damage'])
-                            p_anim.start_damage()
-                            if info['effectiveness_msg']:
-                                is_super = "super" in info['effectiveness_msg']
-                                vfx.add_effect(info['effectiveness_msg'], GREEN if is_super else RED)
-                                if is_super: vfx.add_shake()
-                        fx_msg = battle.apply_move_effects(gm.ai_mon, gm.player_mon, move)
-                        if fx_msg:
-                            msg += "\n" + fx_msg
-                            vfx.add_effect(fx_msg.strip().split("\n")[0], WHITE)
-                state = 'AI_MESSAGE'
-                anim_timer = time.time() + MESSAGE_DURATION
-                turn_q.insert(0, ('CHECK_FAINT', gm.player_mon))
+                        decision = find_best_action(gm.ai_team, gm.player_team, gm.ai_mon, gm.player_mon, depth=2)
+                        
+                        if isinstance(decision, Monster): # AI Switches
+                            msg = f"Enemy switched to {decision.name}!"
+                            gm.ai_mon.reset_battle_stats()
+                            gm.ai_mon = decision
+                            ai_anim.set_monster(gm.ai_mon)
+                            state = 'AI_MESSAGE'
+                            anim_timer = time.time() + MESSAGE_DURATION
+                        elif decision: # AI Moves
+                            move = decision
+                            move.current_pp -= 1
+                            msg = f"{gm.ai_mon.name} uses {move.name}!"
+                            ai_anim.start_attack()
+                            if move.power > 0: 
+                                info = battle.calculate_damage(gm.ai_mon, gm.player_mon, move)
+                                gm.player_mon.take_damage(info['damage'])
+                                p_anim.start_damage()
+                                if info['effectiveness_msg']:
+                                    is_super = "super" in info['effectiveness_msg']
+                                    vfx.add_effect(info['effectiveness_msg'], GREEN if is_super else RED)
+                                    if is_super: vfx.add_shake()
+                            fx_msg = battle.apply_move_effects(gm.ai_mon, gm.player_mon, move)
+                            if fx_msg:
+                                msg += "\n" + fx_msg
+                                vfx.add_effect(fx_msg.strip().split("\n")[0], WHITE)
+                            state = 'AI_MESSAGE'
+                            anim_timer = time.time() + MESSAGE_DURATION
+                            turn_q.insert(0, ('CHECK_FAINT', gm.player_mon))
+                        else:
+                             msg = f"{gm.ai_mon.name} is loafing around!" # Should not happen
+                             state = 'AI_MESSAGE'
+                             anim_timer = time.time() + MESSAGE_DURATION
 
             elif action == 'END_TURN_EFFECTS':
                 if gm.player_mon.status == 'poisoned' and not gm.player_mon.is_fainted:
@@ -460,16 +461,18 @@ def main():
                     gm.player_mon.take_damage(dmg)
                     msg = f"{gm.player_mon.name} was hurt by poison!"
                     vfx.add_effect("Poison!", STATUS_COLORS['poisoned'])
-                    state = 'PLAYER_MESSAGE'
-                    anim_timer = time.time() + MESSAGE_DURATION
+                    if state != 'PLAYER_MESSAGE': 
+                         state = 'PLAYER_MESSAGE'
+                         anim_timer = time.time() + MESSAGE_DURATION
                     turn_q.insert(0, ('CHECK_FAINT', gm.player_mon))
                 if gm.ai_mon.status == 'poisoned' and not gm.ai_mon.is_fainted:
                     dmg = gm.ai_mon.max_hp // 8
                     gm.ai_mon.take_damage(dmg)
                     msg = f"{gm.ai_mon.name} was hurt by poison!"
                     vfx.add_effect("Poison!", STATUS_COLORS['poisoned'])
-                    state = 'AI_MESSAGE'
-                    anim_timer = time.time() + MESSAGE_DURATION
+                    if state != 'AI_MESSAGE': 
+                        state = 'AI_MESSAGE'
+                        anim_timer = time.time() + MESSAGE_DURATION
                     turn_q.insert(0, ('CHECK_FAINT', gm.ai_mon))
 
             elif action == 'CHECK_FAINT':

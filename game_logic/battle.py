@@ -11,6 +11,14 @@ TYPE_CHART = {
     'Electric': {'NotVeryEffective': ['Grass', 'Electric', 'Dragon'], 'NoEffect': ['Ground'], 'SuperEffective': ['Water', 'Flying']},
     'Flying': {'NotVeryEffective': ['Electric', 'Rock', 'Steel'], 'SuperEffective': ['Grass', 'Fighting', 'Bug']},
     'Poison': {'NotVeryEffective': ['Poison', 'Ground', 'Rock', 'Ghost'], 'SuperEffective': ['Grass', 'Fairy'], 'NoEffect': ['Steel']},
+    'Ground': {'NotVeryEffective': ['Grass', 'Bug'], 'NoEffect': ['Flying'], 'SuperEffective': ['Fire', 'Electric', 'Poison', 'Rock', 'Steel']},
+    'Rock': {'NotVeryEffective': ['Fighting', 'Ground', 'Steel'], 'SuperEffective': ['Fire', 'Ice', 'Flying', 'Bug']},
+    'Ghost': {'NotVeryEffective': ['Dark'], 'NoEffect': ['Normal'], 'SuperEffective': ['Ghost', 'Psychic']},
+    'Ice': {'NotVeryEffective': ['Fire', 'Water', 'Ice', 'Steel'], 'SuperEffective': ['Grass', 'Ground', 'Flying', 'Dragon']},
+    'Dragon': {'NotVeryEffective': ['Steel'], 'NoEffect': ['Fairy'], 'SuperEffective': ['Dragon']},
+    'Fighting': {'NotVeryEffective': ['Poison', 'Flying', 'Psychic', 'Bug', 'Fairy'], 'NoEffect': ['Ghost'], 'SuperEffective': ['Normal', 'Ice', 'Rock', 'Dark', 'Steel']},
+    'Psychic': {'NotVeryEffective': ['Psychic', 'Steel'], 'NoEffect': ['Dark'], 'SuperEffective': ['Fighting', 'Poison']},
+    'Bug': {'NotVeryEffective': ['Fire', 'Fighting', 'Poison', 'Flying', 'Ghost', 'Steel', 'Fairy'], 'SuperEffective': ['Grass', 'Psychic', 'Dark']},
 }
 
 class Battle:
